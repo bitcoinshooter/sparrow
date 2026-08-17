@@ -4,6 +4,7 @@ import com.beust.jcommander.JCommander;
 import com.google.common.eventbus.Subscribe;
 import com.sparrowwallet.drongo.*;
 import com.sparrowwallet.drongo.address.Address;
+import com.sparrowwallet.drongo.antiexfil.VerifiedAntiExfilSignature;
 import com.sparrowwallet.drongo.crypto.*;
 import com.sparrowwallet.drongo.dns.DnsPayment;
 import com.sparrowwallet.drongo.dns.DnsPaymentCache;
@@ -1982,6 +1983,11 @@ public class AppController implements Initializable {
     }
 
     private void addTransactionTab(String name, File file, PSBT psbt) {
+        addTransactionTab(name, file, psbt, Set.of());
+    }
+
+    private void addTransactionTab(String name, File file, PSBT psbt,
+                                   Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures) {
         //Add any missing previous outputs if available in open wallets
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
             if(psbtInput.getUtxo() == null) {
@@ -2036,13 +2042,15 @@ public class AppController implements Initializable {
 
         Window psbtWalletWindow = AppServices.get().getWindowForPSBT(psbt);
         if(psbtWalletWindow != null && !tabs.getScene().getWindow().equals(psbtWalletWindow)) {
-            EventManager.get().post(new ViewPSBTEvent(psbtWalletWindow, name, file, psbt));
+            EventManager.get().post(new ViewPSBTEvent(psbtWalletWindow, name, file, psbt, null,
+                    TransactionView.HEADERS, null, verifiedAntiExfilSignatures));
             if(psbtWalletWindow instanceof Stage) {
                 Stage stage = (Stage)psbtWalletWindow;
                 stage.toFront();
             }
         } else {
-            addTransactionTab(name, file, psbt.getTransaction(), psbt, null, null, null);
+            addTransactionTab(name, file, psbt.getTransaction(), psbt, null, null, null,
+                    verifiedAntiExfilSignatures);
         }
     }
 
@@ -2055,11 +2063,17 @@ public class AppController implements Initializable {
     }
 
     private void addTransactionTab(String name, File file, Transaction transaction, PSBT psbt, BlockTransaction blockTransaction, TransactionView initialView, Integer initialIndex) {
+        addTransactionTab(name, file, transaction, psbt, blockTransaction, initialView, initialIndex, Set.of());
+    }
+
+    private void addTransactionTab(String name, File file, Transaction transaction, PSBT psbt,
+                                   BlockTransaction blockTransaction, TransactionView initialView, Integer initialIndex,
+                                   Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures) {
         for(Tab tab : tabs.getTabs()) {
             TabData tabData = (TabData)tab.getUserData();
             if(tabData instanceof TransactionTabData transactionTabData) {
                 if(isExistingTransaction(transactionTabData, transaction, psbt, getTabName(tab))) {
-                    handleTransactionMerge(transactionTabData, psbt, name, tab);
+                    handleTransactionMerge(transactionTabData, psbt, name, tab, verifiedAntiExfilSignatures);
                     return;
                 }
 
@@ -2135,7 +2149,7 @@ public class AppController implements Initializable {
 
             TransactionData transactionData;
             if(psbt != null) {
-                transactionData = new TransactionData(name, psbt);
+                transactionData = new TransactionData(name, psbt, verifiedAntiExfilSignatures);
             } else if(blockTransaction != null) {
                 transactionData = new TransactionData(name, blockTransaction);
             } else {
@@ -2176,15 +2190,47 @@ public class AppController implements Initializable {
         return false;
     }
 
-    private void handleTransactionMerge(TransactionTabData transactionTabData, PSBT psbt, String name, Tab tab) {
+    private void handleTransactionMerge(TransactionTabData transactionTabData, PSBT psbt, String name, Tab tab,
+                                        Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures) {
         PSBT currentPsbt = transactionTabData.getPsbt();
 
         if(currentPsbt != null && psbt != null && !currentPsbt.isFinalized()) {
+            Set<VerifiedAntiExfilSignature> candidateProofs = new LinkedHashSet<>(
+                    transactionTabData.getTransactionData().getVerifiedAntiExfilSignatures());
+            candidateProofs.addAll(verifiedAntiExfilSignatures);
+            Wallet signingWallet = transactionTabData.getTransactionData().getSigningWallet();
+            if(signingWallet == null && psbt.hasSignatures()) {
+                AppServices.showErrorDialog("Signed transaction quarantined",
+                        "Open the signing wallet before combining this signed PSBT so protected-signing policy can be evaluated.");
+                tabs.getSelectionModel().select(tab);
+                return;
+            }
+            if(signingWallet != null) {
+                PSBT prospective;
+                try {
+                    prospective = new PSBT(currentPsbt.serialize(), false);
+                    if(psbt.isFinalized()) prospective.copyFinalizedFields(psbt); else prospective.combine(psbt);
+                } catch(Exception exception) {
+                    AppServices.showErrorDialog("Invalid PSBT", "The returned PSBT could not be evaluated before combining.");
+                    tabs.getSelectionModel().select(tab);
+                    return;
+                }
+                AntiExfilPolicy.ProvenanceStatus status = AntiExfilPolicy.evaluateSignatureProvenance(
+                        signingWallet, prospective, candidateProofs);
+                if(status != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
+                    AppServices.showErrorDialog("Protected signature rejected",
+                            "The signed PSBT cannot be combined because protected-signing provenance failed (" + status + ").");
+                    tabs.getSelectionModel().select(tab);
+                    return;
+                }
+            }
             if(!psbt.isFinalized()) {
                 //As per BIP174, combine PSBTs with matching transactions so long as they are not yet finalized
                 try {
                     currentPsbt.verifyCombinedSignatures(psbt);
                     currentPsbt.combine(psbt);
+                    transactionTabData.getTransactionData().replaceVerifiedAntiExfilSignatures(
+                            AntiExfilPolicy.retainMatchingProofs(signingWallet, currentPsbt, candidateProofs));
                     setTabName(tab, name);
                     EventManager.get().post(new PSBTCombinedEvent(currentPsbt));
                 } catch(PSBTSignatureException e) {
@@ -2193,6 +2239,8 @@ public class AppController implements Initializable {
             } else {
                 //If the new PSBT is finalized, copy the finalized fields to the existing unfinalized PSBT
                 currentPsbt.copyFinalizedFields(psbt);
+                transactionTabData.getTransactionData().replaceVerifiedAntiExfilSignatures(
+                        AntiExfilPolicy.retainMatchingProofs(signingWallet, currentPsbt, candidateProofs));
                 setTabName(tab, name);
                 EventManager.get().post(new PSBTFinalizedEvent(currentPsbt));
             }
@@ -3268,7 +3316,7 @@ public class AppController implements Initializable {
         if(tabs.getScene().getWindow().equals(event.getWindow())) {
             if(event.getBlockTransaction() != null) {
                 addTransactionTab(event.getBlockTransaction(), event.getInitialView(), event.getInitialIndex());
-            } else if(!violatesAntiExfilPolicy(event.getContextPsbt(), event.getTransaction(), null, false)
+            } else if(!violatesAntiExfilPolicy(event.getContextPsbt(), event.getTransaction(), null, Set.of())
                     && verifyTransactionContext(event.getContextPsbt(), event.getTransaction(), null, "scanned")) {
                 addTransactionTab(event.getTransaction(), event.getInitialView(), event.getInitialIndex());
             }
@@ -3278,21 +3326,32 @@ public class AppController implements Initializable {
     @Subscribe
     public void viewPSBT(ViewPSBTEvent event) {
         if(tabs.getScene().getWindow().equals(event.getWindow())) {
-            if(!violatesAntiExfilPolicy(event.getContextPsbt(), null, event.getPsbt(), event.isAntiExfilVerified())
+            if(!violatesAntiExfilPolicy(event.getContextPsbt(), null, event.getPsbt(), event.getVerifiedAntiExfilSignatures())
                     && verifyTransactionContext(event.getContextPsbt(), null, event.getPsbt(), "scanned")) {
-                addTransactionTab(event.getLabel(), event.getFile(), event.getPsbt());
+                addTransactionTab(event.getLabel(), event.getFile(), event.getPsbt(), event.getVerifiedAntiExfilSignatures());
             }
         }
     }
 
-    private boolean violatesAntiExfilPolicy(PSBT contextPsbt, Transaction transaction, PSBT psbt, boolean antiExfilVerified) {
-        if(antiExfilVerified) return false;
+    private boolean violatesAntiExfilPolicy(PSBT contextPsbt, Transaction transaction, PSBT psbt,
+                                            Set<VerifiedAntiExfilSignature> verifiedAntiExfilSignatures) {
         Optional<Wallet> signingWallet = AppServices.get().getOpenWallets().keySet().stream()
                 .filter(wallet -> contextPsbt != null ? wallet.canSign(contextPsbt)
                         : transaction != null ? wallet.canSign(transaction)
                         : psbt != null && wallet.canSign(psbt))
                 .findFirst();
         if(signingWallet.isEmpty()) return false;
+        if(psbt != null && (AntiExfilPolicy.requiresProtectedSigning(signingWallet.get())
+                || !verifiedAntiExfilSignatures.isEmpty())) {
+            AntiExfilPolicy.ProvenanceStatus status = AntiExfilPolicy.evaluateSignatureProvenance(
+                    signingWallet.get(), psbt, verifiedAntiExfilSignatures);
+            if(status != AntiExfilPolicy.ProvenanceStatus.PERMITTED) {
+                AppServices.showErrorDialog("Protected signature rejected",
+                        "A signature requiring protected signing has no matching verified ceremony proof (" + status + ").");
+                return true;
+            }
+            return false;
+        }
         if(!AntiExfilPolicy.requiresProtectedSigning(signingWallet.get())) return false;
         boolean violation;
         try {
