@@ -13,6 +13,9 @@ import com.sparrowwallet.drongo.uri.BitcoinURI;
 import com.sparrowwallet.drongo.wallet.*;
 import com.sparrowwallet.hummingbird.UR;
 import com.sparrowwallet.hummingbird.registry.CryptoPSBT;
+import com.sparrowwallet.drongo.KeyDerivation;
+import com.sparrowwallet.drongo.crypto.ECKey;
+import com.sparrowwallet.lark.AntiExfilSession;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.EventManager;
 import com.sparrowwallet.sparrow.UnitFormat;
@@ -1005,6 +1008,10 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public void showPSBT(ActionEvent event) {
+        if(isAntiExfilEnabled()) {
+            showPSBTAntiExfil(event);
+            return;
+        }
         ToggleButton toggleButton = (ToggleButton)event.getSource();
         toggleButton.setSelected(false);
 
@@ -1881,5 +1888,136 @@ public class HeadersController extends TransactionFormController implements Init
         private int getHighestSourceIndex(Wallet wallet) {
             return wallet.getKeystores().stream().map(keystore -> sourceOrder.indexOf(keystore.getSource())).mapToInt(v -> v).max().orElse(0);
         }
+    }
+
+    /**
+     * Anti-exfil QR signing (two-round sign-to-contract over the QR transport).
+     * Enabled by launching with -Dsparrow.antiexfil=true. When on, "Show QR"
+     * routes here instead of the normal single-pass showPSBT/scanPSBT.
+     *
+     * Flow (each show is an animated crypto-psbt UR; each scan reads Jade's
+     * screen):
+     *   Round 1: show PSBT with host commitments -> scan Jade's signer commitments
+     *   Round 2: show PSBT with revealed entropy -> scan Jade's signed PSBT
+     * Then verify every signature incorporated our entropy; hard-fail on mismatch.
+     *
+     * The signer is assumed to be a Jade running anti-exfil-capable firmware.
+     */
+    private static boolean isAntiExfilEnabled() {
+        return Boolean.getBoolean("sparrow.antiexfil")
+                || "true".equalsIgnoreCase(System.getenv("SPARROW_ANTIEXFIL"));
+    }
+
+    /**
+     * Anti-exfil QR signing: two-round ECDSA sign-to-contract over the QR
+     * transport. Round 1 sends per-input host commitments and receives the
+     * signer's nonce commitments (no signatures). Round 2 reveals the host
+     * entropy and receives signatures, each of which is then verified to have
+     * incorporated that entropy - so a malicious signer cannot leak key material
+     * through biased nonces. The signer must run anti-exfil-capable firmware.
+     */
+    public void showPSBTAntiExfil(ActionEvent event) {
+        ToggleButton toggleButton = (ToggleButton)event.getSource();
+        toggleButton.setSelected(false);
+
+        PSBT walletPsbt = headersForm.getPsbt();
+        String fingerprint = headersForm.getSigningWallet().getKeystores().stream()
+                .map(k -> k.getKeyDerivation().getMasterFingerprint())
+                .filter(Objects::nonNull).findFirst().orElse(null);
+        if(fingerprint == null) {
+            showErrorDialog("Anti-exfil error", "Could not determine signing fingerprint");
+            return;
+        }
+
+        Map<Integer, List<byte[]>> signersByInput = new LinkedHashMap<>();
+        List<PSBTInput> inputs = walletPsbt.getPsbtInputs();
+        for(int i = 0; i < inputs.size(); i++) {
+            List<byte[]> signers = new ArrayList<>();
+            for(Map.Entry<ECKey, KeyDerivation> e : inputs.get(i).getDerivedPublicKeys().entrySet()) {
+                String fp = e.getValue() == null ? null : e.getValue().getMasterFingerprint();
+                if(fp != null && fp.equalsIgnoreCase(fingerprint)) {
+                    signers.add(e.getKey().getPubKey());
+                }
+            }
+            if(!signers.isEmpty()) {
+                signersByInput.put(i, signers);
+            }
+        }
+        if(signersByInput.isEmpty()) {
+            showErrorDialog("Anti-exfil error", "No inputs for this wallet to sign");
+            return;
+        }
+
+        try {
+            boolean includeNonWitnessUtxos = !Arrays.asList(ScriptType.WITNESS_TYPES).contains(headersForm.getSigningWallet().getScriptType());
+            byte[] psbtBytes = walletPsbt.getForExport().serialize(true, includeNonWitnessUtxos);
+            AntiExfilSession session = new AntiExfilSession(psbtBytes, signersByInput);
+
+            byte[] round1 = session.buildRound1();
+            if(!showAndConfirm("Anti-exfil step 1 of 2: commitment", round1, toggleButton)) {
+                return;
+            }
+            PSBT reply1 = scanPsbtResult(toggleButton);
+            if(reply1 == null) {
+                return;
+            }
+            try {
+                session.acceptRound1Reply(reply1.serialize());
+            } catch(Exception ae) {
+                showErrorDialog("Anti-exfil round 1 rejected", ae.getMessage());
+                return;
+            }
+
+            byte[] round2 = session.buildRound2();
+            if(!showAndConfirm("Anti-exfil step 2 of 2: sign", round2, toggleButton)) {
+                return;
+            }
+            PSBT reply2 = scanPsbtResult(toggleButton);
+            if(reply2 == null) {
+                return;
+            }
+
+            PSBT verified = session.verifyAndExtract(reply2.serialize());
+            AppServices.showAlertDialog("Anti-exfil verified",
+                    "All signatures verified: the signer incorporated host entropy and cannot have leaked key material through nonces.",
+                    javafx.scene.control.Alert.AlertType.INFORMATION, javafx.scene.control.ButtonType.OK);
+            EventManager.get().post(new ViewPSBTEvent(toggleButton.getScene().getWindow(), null, null, verified, walletPsbt));
+        } catch(SecurityException e) {
+            log.error("Anti-exfil verification failed", e);
+            showErrorDialog("ANTI-EXFIL VERIFICATION FAILED",
+                    "Do NOT broadcast. The signing device may be leaking key material through signature nonces.\n\n" + e.getMessage());
+        } catch(Exception e) {
+            log.error("Anti-exfil signing error", e);
+            showErrorDialog("Anti-exfil error", e.getMessage());
+        }
+    }
+
+    private boolean showAndConfirm(String title, byte[] psbtBytes, ToggleButton toggleButton) throws UR.URException {
+        CryptoPSBT cryptoPSBT = new CryptoPSBT(psbtBytes);
+        QRDisplayDialog qrDisplayDialog = new QRDisplayDialog(cryptoPSBT.toUR(), null, false, true, QREncoding.UR);
+        qrDisplayDialog.setTitle(title);
+        qrDisplayDialog.initOwner(toggleButton.getScene().getWindow());
+        Optional<ButtonType> opt = qrDisplayDialog.showAndWait();
+        return opt.isPresent() && opt.get().getButtonData() == ButtonBar.ButtonData.OK_DONE;
+    }
+
+    private PSBT scanPsbtResult(ToggleButton toggleButton) {
+        QRScanDialog qrScanDialog = new QRScanDialog();
+        qrScanDialog.initOwner(toggleButton.getScene().getWindow());
+        Optional<QRScanDialog.Result> opt = qrScanDialog.showAndWait();
+        if(opt.isEmpty()) {
+            return null;
+        }
+        QRScanDialog.Result result = opt.get();
+        if(result.psbt != null) {
+            return result.psbt;
+        }
+        if(result.exception != null) {
+            log.error("Error scanning QR", result.exception);
+            showErrorDialog("Error scanning QR", result.exception.getMessage());
+        } else {
+            showErrorDialog("Invalid QR Code", "Scanned QR is not a PSBT");
+        }
+        return null;
     }
 }
