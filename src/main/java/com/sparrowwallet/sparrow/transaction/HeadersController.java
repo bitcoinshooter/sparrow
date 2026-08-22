@@ -1909,6 +1909,28 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     /**
+     * Anti-exfil sessions held per transaction so that a retry after a failed or
+     * cancelled scan resumes the same session rather than starting a fresh one.
+     *
+     * Static, so a session survives the transaction tab being closed and
+     * reopened: a device that induces failures should not be able to win a fresh
+     * host entropy draw simply by making the user reopen the transaction. Entries
+     * are removed on successful signing, and the map is bounded so that abandoned
+     * sessions cannot accumulate indefinitely.
+     *
+     * Note this still resets when Sparrow restarts. Persisting sessions with the
+     * wallet would close that last gap - see the gating question in the proposal.
+     */
+    private static final int MAX_ANTIEXFIL_SESSIONS = 16;
+    private static final Map<String, AntiExfilSession> antiExfilSessions =
+            Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, false) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, AntiExfilSession> eldest) {
+                    return size() > MAX_ANTIEXFIL_SESSIONS;
+                }
+            });
+
+    /**
      * Anti-exfil QR signing: two-round ECDSA sign-to-contract over the QR
      * transport. Round 1 sends per-input host commitments and receives the
      * signer's nonce commitments (no signatures). Round 2 reveals the host
@@ -1951,7 +1973,17 @@ public class HeadersController extends TransactionFormController implements Init
         try {
             boolean includeNonWitnessUtxos = !Arrays.asList(ScriptType.WITNESS_TYPES).contains(headersForm.getSigningWallet().getScriptType());
             byte[] psbtBytes = walletPsbt.getForExport().serialize(true, includeNonWitnessUtxos);
-            AntiExfilSession session = new AntiExfilSession(psbtBytes, signersByInput);
+
+            // Reuse the session across retries of the same transaction, including
+            // after the tab has been closed and reopened. A new session would draw
+            // fresh host entropy and accept a fresh signer commitment, which lets a
+            // device abort repeatedly - each failure looking like a bad scan - until
+            // it gets a nonce it likes. Keeping the session pins the entropy and
+            // makes AntiExfilSession reject a commitment that changes between
+            // attempts.
+            String txid = walletPsbt.getTransaction().calculateTxId(false).toString();
+            AntiExfilSession session = antiExfilSessions.computeIfAbsent(txid,
+                    k -> new AntiExfilSession(psbtBytes, signersByInput));
 
             byte[] round1 = session.buildRound1();
             if(!showAndConfirm("Anti-exfil step 1 of 2: commitment", round1, toggleButton)) {
@@ -1963,7 +1995,13 @@ public class HeadersController extends TransactionFormController implements Init
             }
             try {
                 session.acceptRound1Reply(reply1.serialize());
-            } catch(Exception ae) {
+            } catch(IllegalStateException ae) {
+                // Benign: the device did not take part in the protocol (no commitment
+                // returned, or it signed early). Not evidence of an attack, so report
+                // it plainly. SecurityException is deliberately NOT caught here - a
+                // substituted transaction or a commitment that changed between
+                // attempts indicates a misbehaving device, and must reach the
+                // prominent handler below rather than be reported as a rejected round.
                 showErrorDialog("Anti-exfil round 1 rejected", ae.getMessage());
                 return;
             }
@@ -1978,6 +2016,7 @@ public class HeadersController extends TransactionFormController implements Init
             }
 
             PSBT verified = session.verifyAndExtract(reply2.serialize());
+            antiExfilSessions.remove(txid);
             AppServices.showAlertDialog("Anti-exfil verified",
                     "All signatures verified: the signer incorporated host entropy and cannot have leaked key material through nonces.",
                     javafx.scene.control.Alert.AlertType.INFORMATION, javafx.scene.control.ButtonType.OK);
@@ -1985,7 +2024,9 @@ public class HeadersController extends TransactionFormController implements Init
         } catch(SecurityException e) {
             log.error("Anti-exfil verification failed", e);
             showErrorDialog("ANTI-EXFIL VERIFICATION FAILED",
-                    "Do NOT broadcast. The signing device may be leaking key material through signature nonces.\n\n" + e.getMessage());
+                    "Do NOT broadcast this transaction.\n\n" + e.getMessage()
+                    + "\n\nStop using this device for signing until you understand why this happened. "
+                    + "If it holds funds, treat the keys on it as potentially compromised.");
         } catch(Exception e) {
             log.error("Anti-exfil signing error", e);
             showErrorDialog("Anti-exfil error", e.getMessage());
@@ -1994,6 +2035,11 @@ public class HeadersController extends TransactionFormController implements Init
 
     private boolean showAndConfirm(String title, byte[] psbtBytes, ToggleButton toggleButton) throws UR.URException {
         CryptoPSBT cryptoPSBT = new CryptoPSBT(psbtBytes);
+        // UR is pinned here rather than selected per keystore as showPSBT() does.
+        // The protocol requires an AE-capable signer, which today means Jade, and
+        // Jade speaks UR. A real integration should choose the encoding from the
+        // keystore's wallet model, so that a signer selecting BBQR or legacy
+        // encoding is not silently handed something different on this path.
         QRDisplayDialog qrDisplayDialog = new QRDisplayDialog(cryptoPSBT.toUR(), null, false, true, QREncoding.UR);
         qrDisplayDialog.setTitle(title);
         qrDisplayDialog.initOwner(toggleButton.getScene().getWindow());
