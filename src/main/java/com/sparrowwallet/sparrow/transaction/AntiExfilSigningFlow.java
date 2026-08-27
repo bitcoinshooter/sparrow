@@ -1,38 +1,65 @@
 package com.sparrowwallet.sparrow.transaction;
 
-import com.sparrowwallet.drongo.antiexfil.AntiExfilCodec;
 import com.sparrowwallet.drongo.antiexfil.AntiExfilCoordinator;
 import com.sparrowwallet.drongo.antiexfil.AntiExfilException;
 import com.sparrowwallet.drongo.antiexfil.AntiExfilNetwork;
 import com.sparrowwallet.drongo.antiexfil.AntiExfilStage;
-import com.sparrowwallet.sparrow.io.AntiExfilTransportPackage;
+import com.sparrowwallet.sparrow.io.AntiExfilCarriage;
 
 import java.util.Optional;
 
+/**
+ * Drives the four-stage ceremony against one signing device.
+ *
+ * Carriage is now a parameter rather than a hardcoded envelope. The stage
+ * sequence, the pre-reveal cancellation rule, the post-reveal abort recording
+ * and the exact-retry loop are unchanged and identical for every profile,
+ * because they are properties of the protocol rather than of the transport.
+ *
+ * This is what allows a multisig where one cosigner is a SeedSigner speaking
+ * AEXT and another is a Jade speaking in-PSBT records: each keystore selects
+ * its carriage, and the coordinator sees the same AEXB messages either way.
+ */
 public final class AntiExfilSigningFlow {
     private AntiExfilSigningFlow() {
     }
 
+    /** Detached AEXT carriage, the existing default. */
     public static Result execute(AntiExfilCoordinator coordinator, AntiExfilNetwork network, Exchange exchange) {
-        return execute(new CoordinatorSession(coordinator), network, exchange);
+        return execute(coordinator, network, exchange, AntiExfilCarriage.Aext.INSTANCE);
     }
 
+    public static Result execute(AntiExfilCoordinator coordinator, AntiExfilNetwork network,
+                                 Exchange exchange, AntiExfilCarriage carriage) {
+        return execute(new CoordinatorSession(coordinator), network, exchange, carriage);
+    }
+
+    /** Session-level entry point, defaulting to the detached AEXT carriage. */
     static Result execute(Session session, AntiExfilNetwork network, Exchange exchange) {
+        return execute(session, network, exchange, AntiExfilCarriage.Aext.INSTANCE);
+    }
+
+    static Result execute(Session session, AntiExfilNetwork network, Exchange exchange,
+                          AntiExfilCarriage carriage) {
         AntiExfilCoordinator.Phase phase = session.phase();
         if(phase == AntiExfilCoordinator.Phase.COMPLETE) {
             return new Result(Outcome.COMPLETE, session.completedResult());
         }
 
         byte[] frozenPsbt = session.frozenPsbt();
+        byte[] commitBytes = session.hostCommitMessage();
         byte[] revealBytes;
+
         if(phase == AntiExfilCoordinator.Phase.COMMITMENTS_CREATED) {
-            AntiExfilTransportPackage commit = outgoing(session.hostCommitMessage(), frozenPsbt);
+            AntiExfilCarriage.Payload commit = carriage.request(commitBytes, frozenPsbt);
             if(!exchange.display(commit)) return new Result(Outcome.CANCELLED_BEFORE_REVEAL, null);
-            Optional<AntiExfilTransportPackage> scanned = exchange.scan(AntiExfilStage.SIGNER_OPENINGS, network);
+            Optional<AntiExfilCarriage.Payload> scanned =
+                    exchange.scan(AntiExfilStage.SIGNER_OPENINGS, network, carriage);
             if(scanned.isEmpty()) return new Result(Outcome.CANCELLED_BEFORE_REVEAL, null);
             try {
-                AntiExfilTransportPackage openings = exactIncoming(scanned.get(), AntiExfilStage.SIGNER_OPENINGS, network);
-                revealBytes = session.acceptOpenings(AntiExfilCodec.encode(openings.getMessage()));
+                byte[] openings = carriage.response(scanned.get(), AntiExfilStage.SIGNER_OPENINGS,
+                        network, commitBytes, frozenPsbt);
+                revealBytes = session.acceptOpenings(openings);
             } catch(AntiExfilException e) {
                 if(AntiExfilCoordinator.isSignerDataRejection(e)) session.recordSignerDataRejection();
                 throw e;
@@ -41,22 +68,24 @@ public final class AntiExfilSigningFlow {
             revealBytes = session.hostRevealMessage();
         }
 
-        AntiExfilTransportPackage reveal = outgoing(revealBytes, frozenPsbt);
+        AntiExfilCarriage.Payload reveal = carriage.request(revealBytes, frozenPsbt);
         while(true) {
             if(!exchange.display(reveal)) {
                 if(exchange.onPostRevealInterruption() == PostRevealAction.RETRY_EXACT) continue;
                 session.recordPostRevealAbort(AntiExfilCoordinator.AbortReason.USER_ABANDONED);
                 return new Result(Outcome.ABORTED_AFTER_REVEAL, null);
             }
-            Optional<AntiExfilTransportPackage> scanned = exchange.scan(AntiExfilStage.SIGNER_SIGNATURES, network);
+            Optional<AntiExfilCarriage.Payload> scanned =
+                    exchange.scan(AntiExfilStage.SIGNER_SIGNATURES, network, carriage);
             if(scanned.isEmpty()) {
                 if(exchange.onPostRevealInterruption() == PostRevealAction.RETRY_EXACT) continue;
                 session.recordPostRevealAbort(AntiExfilCoordinator.AbortReason.TRANSPORT_FAILED);
                 return new Result(Outcome.ABORTED_AFTER_REVEAL, null);
             }
             try {
-                AntiExfilTransportPackage signatures = exactIncoming(scanned.get(), AntiExfilStage.SIGNER_SIGNATURES, network);
-                AntiExfilCoordinator.Completion completion = session.complete(AntiExfilCodec.encode(signatures.getMessage()));
+                byte[] signatures = carriage.response(scanned.get(), AntiExfilStage.SIGNER_SIGNATURES,
+                        network, revealBytes, frozenPsbt);
+                AntiExfilCoordinator.Completion completion = session.complete(signatures);
                 return new Result(Outcome.COMPLETE, completion);
             } catch(AntiExfilException e) {
                 if(AntiExfilCoordinator.isSignerDataRejection(e)) session.recordSignerDataRejection();
@@ -65,21 +94,17 @@ public final class AntiExfilSigningFlow {
         }
     }
 
-    private static AntiExfilTransportPackage outgoing(byte[] message, byte[] psbt) {
-        AntiExfilTransportPackage transportPackage = new AntiExfilTransportPackage(AntiExfilCodec.decode(message), psbt);
-        return AntiExfilTransportPackage.decode(transportPackage.encode());
-    }
-
-    private static AntiExfilTransportPackage exactIncoming(AntiExfilTransportPackage transportPackage,
-                                                            AntiExfilStage stage, AntiExfilNetwork network) {
-        AntiExfilTransportPackage canonical = AntiExfilTransportPackage.decode(transportPackage.encode());
-        canonical.require(stage, network);
-        return canonical;
-    }
-
+    /**
+     * The scanner is told which carriage to expect so it can restrict itself to
+     * one UR type. A protected scan must never fall back to ordinary PSBT
+     * handling, and with two profiles in play it must not accept the other
+     * profile's type either.
+     */
     public interface Exchange {
-        boolean display(AntiExfilTransportPackage transportPackage);
-        Optional<AntiExfilTransportPackage> scan(AntiExfilStage expectedStage, AntiExfilNetwork expectedNetwork);
+        boolean display(AntiExfilCarriage.Payload payload);
+        Optional<AntiExfilCarriage.Payload> scan(AntiExfilStage expectedStage,
+                                                  AntiExfilNetwork expectedNetwork,
+                                                  AntiExfilCarriage carriage);
         PostRevealAction onPostRevealInterruption();
     }
 

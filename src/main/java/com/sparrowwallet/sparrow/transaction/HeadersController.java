@@ -27,6 +27,7 @@ import com.sparrowwallet.sparrow.io.Device;
 import com.sparrowwallet.sparrow.io.bbqr.BBQR;
 import com.sparrowwallet.sparrow.io.bbqr.BBQRType;
 import com.sparrowwallet.sparrow.net.ElectrumServer;
+import com.sparrowwallet.sparrow.io.AntiExfilCarriage;
 import com.sparrowwallet.sparrow.io.Storage;
 import com.sparrowwallet.sparrow.payjoin.Payjoin;
 import com.sparrowwallet.sparrow.wallet.Entry;
@@ -1140,8 +1141,21 @@ public class HeadersController extends TransactionFormController implements Init
                 }
             }
 
+            // Carriage is a property of the device, not of the transaction, so a
+            // wallet can hold a Jade and a SeedSigner as cosigners and run each
+            // through its own profile against the same coordinator.
+            AntiExfilCarriage carriage = AntiExfilCarriage.forKeystore(keystore);
+            if(carriage == null) {
+                showErrorDialog("Protected signing unavailable",
+                        "No anti-exfil profile is known for " + keystore.getWalletModel()
+                                + ". Protected signing must not be attempted with a device that "
+                                + "cannot answer the ceremony.");
+                return;
+            }
+
             AntiExfilSigningFlow.Result result = AntiExfilSigningFlow.execute(coordinator, network,
-                    new AntiExfilQrExchange(antiExfilButton.getScene().getWindow()));
+                    new AntiExfilQrExchange(antiExfilButton.getScene().getWindow(), keystore.getLabel()),
+                    carriage);
             if(result.outcome() == AntiExfilSigningFlow.Outcome.COMPLETE && result.completion() != null) {
                 if(result.completion().isBroadcast()) throw new IllegalStateException("Anti-exfil completion attempted to broadcast");
                 PSBT signed = new PSBT(result.completion().getSignedPsbt(), false);

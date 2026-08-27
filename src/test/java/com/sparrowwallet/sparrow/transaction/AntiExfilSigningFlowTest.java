@@ -10,6 +10,7 @@ import com.sparrowwallet.drongo.antiexfil.AntiExfilSlot;
 import com.sparrowwallet.drongo.antiexfil.AntiExfilStage;
 import com.sparrowwallet.drongo.crypto.ECKey;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
+import com.sparrowwallet.sparrow.io.AntiExfilCarriage;
 import com.sparrowwallet.sparrow.io.AntiExfilTransportPackage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -114,10 +115,16 @@ class AntiExfilSigningFlowTest {
         assertEquals(List.of(AntiExfilCoordinator.AbortReason.SIGNATURE_REJECTED), rejectedOpenings.aborts);
     }
 
-    private AntiExfilTransportPackage transport(AntiExfilMessage message) {
+    /**
+     * The AEXT carriage payload for a message. The flow now works in carriage
+     * payloads rather than transport packages, so the fake exchange hands back
+     * what a scanner would have produced: a UR type and its raw bytes.
+     */
+    private AntiExfilCarriage.Payload transport(AntiExfilMessage message) {
         AntiExfilStage stage = message.getStage();
-        return new AntiExfilTransportPackage(message,
-                stage == AntiExfilStage.HOST_COMMIT || stage == AntiExfilStage.HOST_REVEAL ? psbt : null);
+        byte[] encoded = new AntiExfilTransportPackage(message,
+                stage == AntiExfilStage.HOST_COMMIT || stage == AntiExfilStage.HOST_REVEAL ? psbt : null).encode();
+        return new AntiExfilCarriage.Payload(AntiExfilTransportPackage.UR_TYPE, encoded, stage);
     }
 
     private AntiExfilMessage message(AntiExfilStage stage) {
@@ -158,7 +165,7 @@ class AntiExfilSigningFlowTest {
 
     private static final class FakeExchange implements AntiExfilSigningFlow.Exchange {
         private final Deque<Boolean> displays = new ArrayDeque<>();
-        private final Deque<Optional<AntiExfilTransportPackage>> scans = new ArrayDeque<>();
+        private final Deque<Optional<AntiExfilCarriage.Payload>> scans = new ArrayDeque<>();
         private final Deque<AntiExfilSigningFlow.PostRevealAction> actions = new ArrayDeque<>();
         private final List<byte[]> displayed = new ArrayList<>();
         private final List<AntiExfilStage> displayedStages = new ArrayList<>();
@@ -167,12 +174,14 @@ class AntiExfilSigningFlowTest {
             for(boolean result : displayResults) displays.add(result);
         }
 
-        @Override public boolean display(AntiExfilTransportPackage transportPackage) {
-            displayed.add(transportPackage.encode());
-            displayedStages.add(transportPackage.getMessage().getStage());
+        @Override public boolean display(AntiExfilCarriage.Payload payload) {
+            displayed.add(payload.bytes());
+            displayedStages.add(payload.stage());
             return displays.removeFirst();
         }
-        @Override public Optional<AntiExfilTransportPackage> scan(AntiExfilStage expectedStage, AntiExfilNetwork expectedNetwork) { return scans.removeFirst(); }
+        @Override public Optional<AntiExfilCarriage.Payload> scan(AntiExfilStage expectedStage,
+                                                                   AntiExfilNetwork expectedNetwork,
+                                                                   AntiExfilCarriage carriage) { return scans.removeFirst(); }
         @Override public AntiExfilSigningFlow.PostRevealAction onPostRevealInterruption() { return actions.removeFirst(); }
     }
 }
