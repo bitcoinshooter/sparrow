@@ -1,0 +1,26 @@
+{
+  "artifact": "anti-exfil-abort-journal",
+  "format_version": 1,
+  "wallet_key_identity": "c882a0c7d7029ff2c2f30babd33e492d590629f9d87d771fa3e129eedda1b6ea",
+  "event_count": 3,
+  "events": [
+    {
+      "session_id": "c189e0187421c571e236fc599afbdeb7522c2ea746164f92a3e8f7fea0dd5fd5",
+      "psbt_digest": "dbeff91be9ef131c3541ac99f62381534133a1b15e47a323868b1af2102a8856",
+      "epoch_millis": 1787877466,
+      "reason": "SIGNATURE_REJECTED"
+    },
+    {
+      "session_id": "914000b639d1b37fd3b7c46a094a6271d4c4f387df842d55a6e23542076613b6",
+      "psbt_digest": "65cbe0bd28fbb7636669e83b7a556029c354b6d54cef867865200c40051f0725",
+      "epoch_millis": 1787877745,
+      "reason": "SIGNATURE_REJECTED"
+    },
+    {
+      "session_id": "782f31e78fed0a0435cb66d37d0c840a7bddec826b4278e2537a936e2d48c757",
+      "psbt_digest": "34878a88adca47eccf5ef5dd9e2d9b585ad5b2d4fb2a2e15d7455adedaa3a6d2",
+      "epoch_millis": 1787877945,
+      "reason": "SIGNATURE_REJECTED"
+    }
+  ]
+}

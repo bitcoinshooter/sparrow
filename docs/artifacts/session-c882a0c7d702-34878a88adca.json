@@ -1,0 +1,73 @@
+{
+  "artifact": "anti-exfil-session",
+  "format_version": 2,
+  "phase": "OPENINGS_ACCEPTED",
+  "wallet_key_identity": "c882a0c7d7029ff2c2f30babd33e492d590629f9d87d771fa3e129eedda1b6ea",
+  "carriage": "in-psbt",
+  "network": "testnet4",
+  "frozen_psbt_sha256": "34878a88adca47eccf5ef5dd9e2d9b585ad5b2d4fb2a2e15d7455adedaa3a6d2",
+  "frozen_psbt_length": 291,
+  "messages": [
+    {
+      "stage": 1,
+      "stage_name": "HOST_COMMIT",
+      "length": 183,
+      "layout_consistent": true,
+      "session_id": "782f31e78fed0a0435cb66d37d0c840a7bddec826b4278e2537a936e2d48c757",
+      "psbt_digest": "34878a88adca47eccf5ef5dd9e2d9b585ad5b2d4fb2a2e15d7455adedaa3a6d2",
+      "slot_count": 1,
+      "hex": "414558420104010000000069782f31e78fed0a0435cb66d37d0c840a7bddec826b4278e2537a936e2d48c75734878a88adca47eccf5ef5dd9e2d9b585ad5b2d4fb2a2e15d7455adedaa3a6d20001000000000000000103aabd4625da239477469b0966f41733f22867348fc070d47c0ab196129d7267f271f773c78b8b7cf3753a46ee6cefa858a829a060bb6974cc5d5bc203eb3a746ae5c0e17af043844371c64a13cec7ec3877813edce3b530c449677b37150e2779",
+      "slots": [
+        {
+          "input_index": 0,
+          "sighash_type": 1,
+          "signer_pubkey": "03aabd4625da239477469b0966f41733f22867348fc070d47c0ab196129d7267f2",
+          "message_hash": "71f773c78b8b7cf3753a46ee6cefa858a829a060bb6974cc5d5bc203eb3a746a",
+          "host_commitment": "e5c0e17af043844371c64a13cec7ec3877813edce3b530c449677b37150e2779"
+        }
+      ]
+    },
+    {
+      "stage": 2,
+      "stage_name": "SIGNER_OPENINGS",
+      "length": 216,
+      "layout_consistent": true,
+      "session_id": "782f31e78fed0a0435cb66d37d0c840a7bddec826b4278e2537a936e2d48c757",
+      "psbt_digest": "34878a88adca47eccf5ef5dd9e2d9b585ad5b2d4fb2a2e15d7455adedaa3a6d2",
+      "slot_count": 1,
+      "hex": "41455842010402000000008a782f31e78fed0a0435cb66d37d0c840a7bddec826b4278e2537a936e2d48c75734878a88adca47eccf5ef5dd9e2d9b585ad5b2d4fb2a2e15d7455adedaa3a6d20001000000000000000103aabd4625da239477469b0966f41733f22867348fc070d47c0ab196129d7267f271f773c78b8b7cf3753a46ee6cefa858a829a060bb6974cc5d5bc203eb3a746ae5c0e17af043844371c64a13cec7ec3877813edce3b530c449677b37150e277902bb2a8f63af2bbe112be8b51bd661194ac0ef977a6b1f0e671fa8514834e2368c",
+      "slots": [
+        {
+          "input_index": 0,
+          "sighash_type": 1,
+          "signer_pubkey": "03aabd4625da239477469b0966f41733f22867348fc070d47c0ab196129d7267f2",
+          "message_hash": "71f773c78b8b7cf3753a46ee6cefa858a829a060bb6974cc5d5bc203eb3a746a",
+          "host_commitment": "e5c0e17af043844371c64a13cec7ec3877813edce3b530c449677b37150e2779",
+          "opening": "02bb2a8f63af2bbe112be8b51bd661194ac0ef977a6b1f0e671fa8514834e2368c"
+        }
+      ]
+    },
+    {
+      "stage": 3,
+      "stage_name": "HOST_REVEAL",
+      "length": 248,
+      "layout_consistent": true,
+      "session_id": "782f31e78fed0a0435cb66d37d0c840a7bddec826b4278e2537a936e2d48c757",
+      "psbt_digest": "34878a88adca47eccf5ef5dd9e2d9b585ad5b2d4fb2a2e15d7455adedaa3a6d2",
+      "slot_count": 1,
+      "hex": "4145584201040300000000aa782f31e78fed0a0435cb66d37d0c840a7bddec826b4278e2537a936e2d48c75734878a88adca47eccf5ef5dd9e2d9b585ad5b2d4fb2a2e15d7455adedaa3a6d20001000000000000000103aabd4625da239477469b0966f41733f22867348fc070d47c0ab196129d7267f271f773c78b8b7cf3753a46ee6cefa858a829a060bb6974cc5d5bc203eb3a746ae5c0e17af043844371c64a13cec7ec3877813edce3b530c449677b37150e277902bb2a8f63af2bbe112be8b51bd661194ac0ef977a6b1f0e671fa8514834e2368cee6b5f699077127ca6cee729d5920ed3cf96731742b5a2cb815ec3f6b054ef13",
+      "slots": [
+        {
+          "input_index": 0,
+          "sighash_type": 1,
+          "signer_pubkey": "03aabd4625da239477469b0966f41733f22867348fc070d47c0ab196129d7267f2",
+          "message_hash": "71f773c78b8b7cf3753a46ee6cefa858a829a060bb6974cc5d5bc203eb3a746a",
+          "host_commitment": "e5c0e17af043844371c64a13cec7ec3877813edce3b530c449677b37150e2779",
+          "opening": "02bb2a8f63af2bbe112be8b51bd661194ac0ef977a6b1f0e671fa8514834e2368c",
+          "host_randomness": "ee6b5f699077127ca6cee729d5920ed3cf96731742b5a2cb815ec3f6b054ef13"
+        }
+      ]
+    },
+    null
+  ]
+}

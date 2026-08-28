@@ -1,0 +1,95 @@
+{
+  "artifact": "anti-exfil-session",
+  "format_version": 2,
+  "phase": "COMPLETE",
+  "wallet_key_identity": "3520b40b65696d432381dcc21d2f844aee8c6628f4b4508ac281bb6510b97da9",
+  "carriage": "in-psbt",
+  "network": "testnet4",
+  "frozen_psbt_sha256": "49ec0bbdee881e18afb12db6c030d2f777ca164bc996f37acdcf45653b397fd2",
+  "frozen_psbt_length": 303,
+  "messages": [
+    {
+      "stage": 1,
+      "stage_name": "HOST_COMMIT",
+      "length": 183,
+      "layout_consistent": true,
+      "session_id": "a1d338270a2cf8fd466cc4a7367f907739b8113638cb26b30ac8232438224a20",
+      "psbt_digest": "49ec0bbdee881e18afb12db6c030d2f777ca164bc996f37acdcf45653b397fd2",
+      "slot_count": 1,
+      "hex": "414558420104010000000069a1d338270a2cf8fd466cc4a7367f907739b8113638cb26b30ac8232438224a2049ec0bbdee881e18afb12db6c030d2f777ca164bc996f37acdcf45653b397fd200010000000000000001028fc88a5d8a57f434d3f135bd7ccd108ad97c25ade5fd06d5657eac26da3b73774ac3c76fff73e75f4e0e7eeac8f1274e2890c40dceebcf72ec587d4a7dd4363b12a409c69cfe0bf1b422b72b532159c69ccfe53d14d8b71b0cb89ce04f49918c",
+      "slots": [
+        {
+          "input_index": 0,
+          "sighash_type": 1,
+          "signer_pubkey": "028fc88a5d8a57f434d3f135bd7ccd108ad97c25ade5fd06d5657eac26da3b7377",
+          "message_hash": "4ac3c76fff73e75f4e0e7eeac8f1274e2890c40dceebcf72ec587d4a7dd4363b",
+          "host_commitment": "12a409c69cfe0bf1b422b72b532159c69ccfe53d14d8b71b0cb89ce04f49918c"
+        }
+      ]
+    },
+    {
+      "stage": 2,
+      "stage_name": "SIGNER_OPENINGS",
+      "length": 216,
+      "layout_consistent": true,
+      "session_id": "a1d338270a2cf8fd466cc4a7367f907739b8113638cb26b30ac8232438224a20",
+      "psbt_digest": "49ec0bbdee881e18afb12db6c030d2f777ca164bc996f37acdcf45653b397fd2",
+      "slot_count": 1,
+      "hex": "41455842010402000000008aa1d338270a2cf8fd466cc4a7367f907739b8113638cb26b30ac8232438224a2049ec0bbdee881e18afb12db6c030d2f777ca164bc996f37acdcf45653b397fd200010000000000000001028fc88a5d8a57f434d3f135bd7ccd108ad97c25ade5fd06d5657eac26da3b73774ac3c76fff73e75f4e0e7eeac8f1274e2890c40dceebcf72ec587d4a7dd4363b12a409c69cfe0bf1b422b72b532159c69ccfe53d14d8b71b0cb89ce04f49918c024a8342a33bf06385be1c754338382848b6c2f0b947b5a5990aa4ea5c7185ba90",
+      "slots": [
+        {
+          "input_index": 0,
+          "sighash_type": 1,
+          "signer_pubkey": "028fc88a5d8a57f434d3f135bd7ccd108ad97c25ade5fd06d5657eac26da3b7377",
+          "message_hash": "4ac3c76fff73e75f4e0e7eeac8f1274e2890c40dceebcf72ec587d4a7dd4363b",
+          "host_commitment": "12a409c69cfe0bf1b422b72b532159c69ccfe53d14d8b71b0cb89ce04f49918c",
+          "opening": "024a8342a33bf06385be1c754338382848b6c2f0b947b5a5990aa4ea5c7185ba90"
+        }
+      ]
+    },
+    {
+      "stage": 3,
+      "stage_name": "HOST_REVEAL",
+      "length": 248,
+      "layout_consistent": true,
+      "session_id": "a1d338270a2cf8fd466cc4a7367f907739b8113638cb26b30ac8232438224a20",
+      "psbt_digest": "49ec0bbdee881e18afb12db6c030d2f777ca164bc996f37acdcf45653b397fd2",
+      "slot_count": 1,
+      "hex": "4145584201040300000000aaa1d338270a2cf8fd466cc4a7367f907739b8113638cb26b30ac8232438224a2049ec0bbdee881e18afb12db6c030d2f777ca164bc996f37acdcf45653b397fd200010000000000000001028fc88a5d8a57f434d3f135bd7ccd108ad97c25ade5fd06d5657eac26da3b73774ac3c76fff73e75f4e0e7eeac8f1274e2890c40dceebcf72ec587d4a7dd4363b12a409c69cfe0bf1b422b72b532159c69ccfe53d14d8b71b0cb89ce04f49918c024a8342a33bf06385be1c754338382848b6c2f0b947b5a5990aa4ea5c7185ba9009cafedc56312324a2d2fd7523f38e5452e3d6c1b7d4ccc514636085325b0e90",
+      "slots": [
+        {
+          "input_index": 0,
+          "sighash_type": 1,
+          "signer_pubkey": "028fc88a5d8a57f434d3f135bd7ccd108ad97c25ade5fd06d5657eac26da3b7377",
+          "message_hash": "4ac3c76fff73e75f4e0e7eeac8f1274e2890c40dceebcf72ec587d4a7dd4363b",
+          "host_commitment": "12a409c69cfe0bf1b422b72b532159c69ccfe53d14d8b71b0cb89ce04f49918c",
+          "opening": "024a8342a33bf06385be1c754338382848b6c2f0b947b5a5990aa4ea5c7185ba90",
+          "host_randomness": "09cafedc56312324a2d2fd7523f38e5452e3d6c1b7d4ccc514636085325b0e90"
+        }
+      ]
+    },
+    {
+      "stage": 4,
+      "stage_name": "SIGNER_SIGNATURES",
+      "length": 280,
+      "layout_consistent": true,
+      "session_id": "a1d338270a2cf8fd466cc4a7367f907739b8113638cb26b30ac8232438224a20",
+      "psbt_digest": "49ec0bbdee881e18afb12db6c030d2f777ca164bc996f37acdcf45653b397fd2",
+      "slot_count": 1,
+      "hex": "4145584201040400000000caa1d338270a2cf8fd466cc4a7367f907739b8113638cb26b30ac8232438224a2049ec0bbdee881e18afb12db6c030d2f777ca164bc996f37acdcf45653b397fd200010000000000000001028fc88a5d8a57f434d3f135bd7ccd108ad97c25ade5fd06d5657eac26da3b73774ac3c76fff73e75f4e0e7eeac8f1274e2890c40dceebcf72ec587d4a7dd4363b12a409c69cfe0bf1b422b72b532159c69ccfe53d14d8b71b0cb89ce04f49918c024a8342a33bf06385be1c754338382848b6c2f0b947b5a5990aa4ea5c7185ba9092e1ccca892ed4d03b72d98f8a650567f91b9190193eb828ba83535e256d0ae678fe3f45a6ae0c993f3afa9fdd7773e92843558974bde394984841ca0301fcb2",
+      "slots": [
+        {
+          "input_index": 0,
+          "sighash_type": 1,
+          "signer_pubkey": "028fc88a5d8a57f434d3f135bd7ccd108ad97c25ade5fd06d5657eac26da3b7377",
+          "message_hash": "4ac3c76fff73e75f4e0e7eeac8f1274e2890c40dceebcf72ec587d4a7dd4363b",
+          "host_commitment": "12a409c69cfe0bf1b422b72b532159c69ccfe53d14d8b71b0cb89ce04f49918c",
+          "opening": "024a8342a33bf06385be1c754338382848b6c2f0b947b5a5990aa4ea5c7185ba90",
+          "signature_compact": "92e1ccca892ed4d03b72d98f8a650567f91b9190193eb828ba83535e256d0ae678fe3f45a6ae0c993f3afa9fdd7773e92843558974bde394984841ca0301fcb2"
+        }
+      ]
+    }
+  ],
+  "signed_psbt_sha256": "6b005345058e30825aa8a106ac41c6dbf9b0ac262e21de8ad2b278577d77b332",
+  "signed_psbt_length": 411
+}
