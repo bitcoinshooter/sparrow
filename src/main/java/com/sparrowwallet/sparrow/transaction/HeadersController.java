@@ -1141,15 +1141,26 @@ public class HeadersController extends TransactionFormController implements Init
                 }
             }
 
-            // Carriage is a property of the device, not of the transaction, so a
-            // wallet can hold a Jade and a SeedSigner as cosigners and run each
-            // through its own profile against the same coordinator.
-            AntiExfilCarriage carriage = AntiExfilCarriage.forKeystore(keystore);
+            // Carriage is a property of the firmware, not of the product, so it
+            // is declared per keystore rather than inferred from the wallet
+            // model. A stock device of a supported model cannot answer this
+            // ceremony, and offering it one would teach the user that protected
+            // signing is unreliable.
+            //
+            // The model-based suggestion is only used to prefill a chooser. For
+            // a Required keystore it is not used at all, because Required is
+            // what enforces downgrade protection and must not rest on a guess.
+            AntiExfilCarriage carriage = AntiExfilCarriage.forProfileId(
+                    keystore.getAntiExfilProfileId());
+            if(carriage == null && !keystore.isAntiExfilRequired()) {
+                carriage = AntiExfilCarriage.suggestedForModel(keystore);
+            }
             if(carriage == null) {
                 showErrorDialog("Protected signing unavailable",
-                        "No anti-exfil profile is known for " + keystore.getWalletModel()
-                                + ". Protected signing must not be attempted with a device that "
-                                + "cannot answer the ceremony.");
+                        "This keystore has no anti-exfil profile declared. Select the profile its "
+                                + "firmware implements in the keystore settings. It cannot be "
+                                + "inferred from the device model, because stock firmware for the "
+                                + "same device does not implement this protocol.");
                 return;
             }
 

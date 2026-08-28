@@ -81,20 +81,41 @@ public interface AntiExfilCarriage {
                     byte[] previousMessage, byte[] frozenPsbt);
 
     /**
-     * Which profile a device speaks.
+     * Which profile a device speaks, by explicit profile identifier.
      *
-     * Carriage is a property of the signing device, so it is selected from the
-     * keystore rather than chosen per transaction. A wallet can therefore hold
-     * a Jade and a SeedSigner as cosigners and run each through its own
-     * profile against the same coordinator.
+     * Carriage is a property of the firmware, not of the product. A wallet
+     * model tells you the device is a Jade; it cannot tell you whether that
+     * Jade runs firmware implementing this protocol. Inferring capability from
+     * the model would offer a ceremony to a stock device that cannot answer it,
+     * and would let a user believe a key is protected when nothing about the
+     * device supports it.
      *
-     * Only devices known to implement a profile are mapped. Anything else
-     * returns null, and the caller must treat that as unsupported rather than
-     * guessing: presenting a protected ceremony to a device that cannot answer
-     * it wastes a session and, worse, teaches a user that protected signing is
-     * unreliable.
+     * So capability is declared, never guessed. The identifier comes from the
+     * keystore's own configuration, set when the user or an importer that knows
+     * the firmware asserts it.
      */
-    public static AntiExfilCarriage forKeystore(com.sparrowwallet.drongo.wallet.Keystore keystore) {
+    public static AntiExfilCarriage forProfileId(String profileId) {
+        if(profileId == null) {
+            return null;
+        }
+        return switch(profileId) {
+            case "aext" -> Aext.INSTANCE;
+            case "in-psbt" -> InPsbt.INSTANCE;
+            default -> null;
+        };
+    }
+
+    /**
+     * The profile a device of this model is likely to speak, for populating a
+     * chooser only.
+     *
+     * This is a hint for a user interface, never an authority. A caller must
+     * not start a ceremony on the strength of it, and in particular a keystore
+     * whose policy is Required must have an explicit declaration rather than
+     * this suggestion, because Required is what enforces downgrade protection
+     * and it must not rest on a guess about firmware.
+     */
+    public static AntiExfilCarriage suggestedForModel(com.sparrowwallet.drongo.wallet.Keystore keystore) {
         if(keystore == null || keystore.getWalletModel() == null) {
             return null;
         }
