@@ -61,10 +61,37 @@ tooling sharing no code with the Java or the firmware:
 - the signature in message 4, DER-encoded with sighash byte `0x01`, appears
   verbatim in both the stored signed PSBT and the broadcast transaction
 
+## Negative gate: device-side reveal check
+
+Anti-exfil is two-directional. The coordinator checks that the device folded in
+the host randomness; the device must check that the coordinator did not choose
+that randomness after seeing the device's nonce commitment. Nothing in the
+ceremony above exercises the second half, since an honest coordinator never
+sends a bad reveal.
+
+Tested directly. A temporary hook in the carriage flipped one byte of the
+revealed randomness at stage 3, after the coordinator had produced a valid
+message, so no coordinator validation was bypassed or modified. The commitment
+sent at stage 1 therefore no longer opened to the randomness revealed at stage
+3.
+
+Jade refused, reporting:
+
+    AE host entropy doesn't match commitment
+
+No signature was produced. The device re-derives
+`tagged_hash("s2c/ecdsa/data", rho)` and compares it to the host commitment it
+was sent, so a coordinator cannot wait until it has seen the signer's nonce
+commitment and only then select entropy it prefers.
+
+The hook was reverted immediately and is not present on any branch.
+
 ## What this does not cover
 
 Single-signature only: one slot, one input, one device. No multisig, no
-SeedSigner, and therefore no mixed-carriage transaction. A ceremony where a Jade
+SeedSigner, and therefore no mixed-carriage transaction. The negative gate
+covers the device-side reveal check only; other refusal paths, such as a
+changed transaction or a stripped record, were not exercised on hardware. A ceremony where a Jade
 and a SeedSigner cosign the same transaction through different profiles is the
 next checkpoint and has not been attempted.
 
